@@ -6,8 +6,10 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { Loader2 } from "lucide-react";
+import { Loader2, Info } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 // 定义请求和响应的类型
 const urlSchema = z.object({
@@ -38,13 +40,17 @@ function IngredientSearch() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [testMode, setTestMode] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     try {
-      // 验证URL
-      urlSchema.parse({ imageUrl: url });
+      // 如果是测试模式，则不验证URL
+      if (!testMode) {
+        // 验证URL
+        urlSchema.parse({ imageUrl: url });
+      }
       
       setLoading(true);
       setError(null);
@@ -56,23 +62,42 @@ function IngredientSearch() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ 
-          imageUrl: url
+          imageUrl: url || 'https://example.com/test-image.jpg', // 测试模式下使用默认URL
+          testMode: testMode
         }),
       });
       
       const data = await response.json();
       
       if (!response.ok) {
-        throw new Error(data.message || '分析图片失败');
+        // 根据不同的状态码设置不同的错误提示
+        const errorMessage = data.message || '分析图片失败';
+        
+        // 如果是超时错误，提供额外建议
+        if (response.status === 400 && errorMessage.includes('Qwen 模型请求图片失败')) {
+          setError(`${errorMessage}
+提示: 可能是图片下载超时，建议尝试使用国内可访问的图片源或体积较小的图片。`);
+        } 
+        // 如果是API超时错误
+        else if (response.status === 408) {
+          setError(`${errorMessage}
+提示: 服务器处理超时，请稍后重试或使用测试模式。`);
+        }
+        // 其他错误
+        else {
+          setError(errorMessage);
+        }
+        throw new Error(errorMessage);
       }
       
       setResult(data.data);
     } catch (err) {
       if (err instanceof z.ZodError) {
         setError(err.errors[0].message);
-      } else if (err instanceof Error) {
+      } else if (err instanceof Error && !error) {
+        // 如果上面没有设置过error，则使用这个默认消息
         setError(err.message);
-      } else {
+      } else if (!error) {
         setError('发生未知错误');
       }
     } finally {
@@ -102,10 +127,34 @@ function IngredientSearch() {
                     placeholder="https://example.com/food-image.jpg" 
                     value={url}
                     onChange={(e) => setUrl(e.target.value)}
+                    disabled={testMode}
                   />
                 </div>
+                
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="test-mode"
+                    checked={testMode}
+                    onCheckedChange={setTestMode}
+                  />
+                  <Label htmlFor="test-mode">使用测试模式</Label>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Info className="h-4 w-4 text-gray-500" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="max-w-xs">
+                          测试模式使用预设数据，不会调用API分析图片。
+                          <br />如果您遇到API超时或图片下载失败，可以使用此模式进行测试。
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                
                 {error && (
-                  <Alert variant="destructive" id="src/pages/IngredientSearch.tsx:74:19">
+                  <Alert variant="destructive" id="src/pages/IngredientSearch.tsx:74:19" className="whitespace-pre-line">
                     <AlertTitle>错误</AlertTitle>
                     <AlertDescription>{error}</AlertDescription>
                   </Alert>
@@ -116,7 +165,7 @@ function IngredientSearch() {
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       分析中...
                     </>
-                  ) : '分析图片'}
+                  ) : testMode ? '使用测试数据' : '分析图片'}
                 </Button>
               </form>
             </CardContent>

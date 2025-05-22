@@ -34,11 +34,12 @@ async function analyzeImage(imageUrl) {
     }
     
     // 构造提示
-    const prompt = `请分析这张食品包装图片，提取以下信息：
+    const prompt = `请分析这张食品包装或配料表图片，提取图片中的以下信息：
 1. 品牌名称
 2. 产品名称
 3. 产品类型（如膨化食品、饮料等）
-4. 完整的配料表信息
+4. 完整的配料表信息。注意仅提取各项配料的内容，不要提取其他无关内容，不要提取过敏原信息、食品生产许可证编号、保质期、食用方法、生产日期等与配料无关的内容。
+5. 每项配料的名字。注意仅提取各项配料的内容，不要提取其他无关内容，不要提取过敏原信息、食品生产许可证编号、保质期、食用方法、生产日期等与配料无关的内容。
 
 请按以下JSON格式输出：
 {
@@ -47,7 +48,10 @@ async function analyzeImage(imageUrl) {
   "productType": "产品类型",
   "ingredientsList": "完整的配料表信息",
   "ingredients": ["配料1", "配料2", "配料3", ...]
-}`;
+} 
+  
+如果图片中不包含某项信息，则该项信息的JSON值返回空白值
+`;
 
     // 调用模型 - 严格按照ModelScope官方示例
     const modelId = process.env.MODELSCOPE_MODEL || 'Qwen/Qwen2.5-VL-7B-Instruct';
@@ -60,7 +64,7 @@ async function analyzeImage(imageUrl) {
         content: [
           {
             type: "text", 
-            text: "你是一个帮助分析食品包装的助手，请提取关键信息并按照指定格式返回。"
+            text: "你是一个帮助分析食品包装的助手，请提取食品包装中的关键信息并按照指定格式返回。"
           }
         ],
       },
@@ -92,8 +96,10 @@ async function analyzeImage(imageUrl) {
       stream: false
     });
 
-    // 获取模型输出
+    // 记录完整的 API 响应内容，方便调试
     logger.info('收到API响应');
+    logger.info(`完整的 API 响应内容: ${JSON.stringify(response)}`);
+    
     if (!response || !response.choices || !response.choices[0] || !response.choices[0].message) {
       logger.error('API响应格式错误，详细响应: ' + JSON.stringify(response));
       throw new Error('API响应格式错误');
@@ -101,6 +107,8 @@ async function analyzeImage(imageUrl) {
     
     const result = response.choices[0].message.content;
     logger.info(`图片分析完成，结果长度: ${result ? result.length : 0}`);
+    // 记录完整的结果内容
+    logger.info(`图片分析完整结果内容: ${result}`);
     return result;
   }   catch (error) {
     // 输出更详细的错误信息
@@ -152,7 +160,8 @@ async function analyzeImage(imageUrl) {
 function parseVlmOutput(vlmOutput) {
   try {
     logger.info('开始解析模型输出');
-    logger.info(`原始输出内容: ${vlmOutput.slice(0, 200)}...`); // 只记录前200个字符避免日志过大
+    // 记录完整的原始输出内容
+    logger.info(`原始输出内容: ${vlmOutput}`);
     
     // 尝试提取JSON部分
     const jsonMatch = vlmOutput.match(/\{[\s\S]*\}/);
@@ -177,11 +186,15 @@ function parseVlmOutput(vlmOutput) {
     // 修复多余的逗号
     jsonText = jsonText.replace(/,\s*([}\]])/g, '$1');
     
-    logger.info(`尝试解析修正后的JSON: ${jsonText.slice(0, 200)}...`);
+    // 记录完整的修正后 JSON
+    logger.info(`尝试解析修正后的JSON: ${jsonText}`);
     
     try {
       // 尝试解析JSON
       const data = JSON.parse(jsonText);
+      
+      // 记录解析后的数据
+      logger.info(`JSON解析成功: ${JSON.stringify(data)}`);
       
       // 验证并设置默认值
       const result = {

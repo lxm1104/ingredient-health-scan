@@ -61,13 +61,15 @@ async function analyzeImageController(req, res) {
 
     // 调用VLM模型分析图片
     const vlmOutput = await analyzeImage(imageUrl);
+    logger.info(`VLM模型原始输出: ${vlmOutput}`);
     
     // 解析模型输出
     const parsedData = parseVlmOutput(vlmOutput);
+    logger.info(`完整解析后的数据: ${JSON.stringify(parsedData)}`);
     logger.info(`解析后的数据概要: brand=${parsedData.brand}, name=${parsedData.name}, ingredients数量=${parsedData.ingredients ? parsedData.ingredients.length : 0}`);
     
     // 保存产品信息到数据库
-    const product = new Product({
+    const product = Product({
       brand: parsedData.brand || '未知品牌',
       name: parsedData.name || '未知产品',
       productType: parsedData.productType || '未知类型',
@@ -102,7 +104,7 @@ async function analyzeImageController(req, res) {
       : [{ name: '无法解析配料', isHarmful: false, harmfulLevel: 0 }];
     
     // 保存配料信息到数据库
-    const ingredient = new Ingredient({
+    const ingredient = Ingredient({
       productId: product._id,
       ingredientsList: parsedData.ingredientsList,
       ingredients: ingredientItems
@@ -130,7 +132,33 @@ async function analyzeImageController(req, res) {
     });
   } catch (error) {
     logger.error(`图片分析处理失败: ${error.message}`);
-    res.status(500).json({ success: false, message: `处理失败: ${error.message}` });
+    
+    // 处理特定的错误类型
+    let errorMessage = `处理失败: ${error.message}`;
+    let statusCode = 500;
+    
+    // 处理图片下载超时的情况
+    if (error.message.includes('Download the media resource timed out') || 
+        error.message.includes('timed out during the data inspection process')) {
+      errorMessage = 'Qwen 模型请求图片失败，请更换其他图片链接并重试';
+      statusCode = 400;
+    }
+    // 处理API调用超时的情况
+    else if (error.message.includes('timeout') || error.message.includes('ETIMEDOUT')) {
+      errorMessage = 'API请求超时，请稍后重试';
+      statusCode = 408;
+    }
+    // 处理API认证错误的情况
+    else if (error.message.includes('401') || error.message.includes('认证失败')) {
+      errorMessage = 'API认证失败，请联系管理员检查系统配置';
+      statusCode = 401;
+    }
+    
+    res.status(statusCode).json({ 
+      success: false, 
+      message: errorMessage,
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 }
 
