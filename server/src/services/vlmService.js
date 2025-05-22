@@ -86,15 +86,18 @@ async function analyzeImage(imageUrl) {
     ];
     
     logger.info('API请求消息体构建完成，准备发送请求');
-    logger.info(`请求详情: modelId=${modelId}, imageUrl=${imageUrl}`);
-    
+    logger.info(`请求详情: modelId=${modelId}, imageUrl=${imageUrl},完整提示文本: ${prompt}`);
     // 调用API - 严格按照ModelScope官方示例
-    const response = await client.chat.completions.create({
+    const requestParams = {
       model: modelId,
       messages: messages,
       temperature: 0.2, // 降低随机性，提高一致性
       stream: false
-    });
+    };
+    
+    logger.info(`API请求参数: ${JSON.stringify(requestParams, null, 2)}`);
+    
+    const response = await client.chat.completions.create(requestParams);
 
     // 记录完整的 API 响应内容，方便调试
     logger.info('收到API响应');
