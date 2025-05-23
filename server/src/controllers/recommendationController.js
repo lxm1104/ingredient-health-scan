@@ -2,6 +2,7 @@ import Product from '../models/Product.js';
 import { logger } from '../config/database.js';
 import { getDBStatus } from '../config/database.js';
 import mongoose from 'mongoose';
+import { simplifyProductType, simplifyProductTypes, getSimplifiedProductTypes } from '../services/productTypeService.js';
 
 /**
  * 生成健康评分假数据（备用方案）
@@ -84,7 +85,7 @@ async function getProductHealthScore(productId, productName) {
 }
 
 /**
- * 获取所有产品类型（去重）
+ * 获取所有产品类型（去重，已简化）
  * @param {Object} req - Express请求对象
  * @param {Object} res - Express响应对象
  * @returns {Promise<void>}
@@ -94,25 +95,30 @@ async function getProductCategories(req, res) {
     logger.info('开始获取产品类型列表');
     
     const { usingMemoryDB, inMemoryDB } = getDBStatus();
-    let categories = [];
+    let products = [];
     
     if (usingMemoryDB) {
-      // 从内存数据库获取去重的产品类型
-      logger.info('从内存数据库获取产品类型');
-      const productTypes = inMemoryDB.products.map(product => product.productType);
-      categories = [...new Set(productTypes)].filter(type => type); // 去重并过滤空值
-      logger.info(`内存数据库中找到 ${categories.length} 个产品类型`);
+      // 从内存数据库获取产品
+      logger.info('从内存数据库获取产品');
+      products = [...inMemoryDB.products];
+      logger.info(`内存数据库中找到 ${products.length} 个产品`);
     } else {
-      // 从MongoDB获取去重的产品类型
-      logger.info('从MongoDB获取产品类型');
-      categories = await mongoose.model('Product').distinct('productType');
-      logger.info(`MongoDB中找到 ${categories.length} 个产品类型`);
+      // 从MongoDB获取产品
+      logger.info('从MongoDB获取产品');
+      products = await mongoose.model('Product').find({}).lean();
+      logger.info(`MongoDB中找到 ${products.length} 个产品`);
     }
     
-    // 在数组开头添加"全部"选项
-    const result = ['全部', ...categories];
+    // 应用产品类型简化规则
+    const simplifiedProducts = simplifyProductTypes(products);
     
-    logger.info(`返回产品类型列表: ${result.join(', ')}`);
+    // 获取简化后的产品类型列表（去重）
+    const simplifiedTypes = [...new Set(simplifiedProducts.map(p => p.productType))].filter(type => type);
+    
+    // 在数组开头添加"全部"选项
+    const result = ['全部', ...simplifiedTypes.sort()];
+    
+    logger.info(`返回简化后的产品类型列表: ${result.join(', ')}`);
     res.status(200).json({
       success: true,
       data: {
@@ -158,14 +164,18 @@ async function getRecommendedProducts(req, res) {
       logger.info(`MongoDB中找到 ${products.length} 个产品`);
     }
     
+    // 应用产品类型简化规则
+    const simplifiedProducts = simplifyProductTypes(products);
+    
     // 按类别筛选（如果不是"全部"）
+    let filteredProducts = simplifiedProducts;
     if (category !== '全部') {
-      products = products.filter(product => product.productType === category);
-      logger.info(`按类别 "${category}" 筛选后剩余 ${products.length} 个产品`);
+      filteredProducts = simplifiedProducts.filter(product => product.productType === category);
+      logger.info(`按类别 "${category}" 筛选后剩余 ${filteredProducts.length} 个产品`);
     }
     
     // 为每个产品获取真实的健康评分
-    const productsWithScores = await Promise.all(products.map(async (product) => {
+    const productsWithScores = await Promise.all(filteredProducts.map(async (product) => {
       // 获取真实的健康评分
       const healthInfo = await getProductHealthScore(product._id, product.name);
       
@@ -186,7 +196,8 @@ async function getRecommendedProducts(req, res) {
         id: product._id,
         name: product.name,
         brand: product.brand,
-        category: product.productType,
+        category: product.productType, // 这里已经是简化后的类型
+        originalCategory: product.originalProductType, // 保留原始类型
         image: product.imageUrl,
         healthScore: healthInfo.healthScore,
         healthLevel: healthInfo.healthLevel,
@@ -203,12 +214,11 @@ async function getRecommendedProducts(req, res) {
     const limitedProducts = productsWithScores.slice(0, parseInt(limit));
     
     logger.info(`返回 ${limitedProducts.length} 个推荐产品`);
-    
     res.status(200).json({
       success: true,
       data: {
         products: limitedProducts,
-        total: productsWithScores.length,
+        total: limitedProducts.length,
         category,
         sortBy
       }
@@ -224,4 +234,192 @@ async function getRecommendedProducts(req, res) {
   }
 }
 
-export { getProductCategories, getRecommendedProducts }; 
+/**
+ * 获取基于产品类型的同类推荐产品
+ * @param {Object} req - Express请求对象
+ * @param {Object} res - Express响应对象
+ * @returns {Promise<void>}
+ */
+async function getSimilarProducts(req, res) {
+  try {
+    const { productType, excludeId, limit = 5 } = req.query;
+    
+    if (!productType) {
+      return res.status(400).json({
+        success: false,
+        message: '缺少产品类型参数'
+      });
+    }
+    
+    logger.info(`获取同类推荐产品: 类型=${productType}, 排除ID=${excludeId}, 限制=${limit}`);
+    
+    const { usingMemoryDB, inMemoryDB } = getDBStatus();
+    let products = [];
+    
+    if (usingMemoryDB) {
+      // 从内存数据库获取产品
+      products = [...inMemoryDB.products];
+    } else {
+      // 从MongoDB获取产品
+      const ProductModel = mongoose.model('Product');
+      products = await ProductModel.find({}).lean();
+    }
+    
+    // 应用产品类型简化规则
+    const simplifiedProducts = simplifyProductTypes(products);
+    
+    // 简化传入的产品类型
+    const simplifiedTargetType = simplifyProductType(productType);
+    
+    // 筛选同类产品，排除指定产品
+    let similarProducts = simplifiedProducts.filter(product => 
+      product.productType === simplifiedTargetType && 
+      product._id.toString() !== excludeId
+    );
+    
+    // 为每个产品获取健康评分
+    const productsWithScores = await Promise.all(similarProducts.map(async (product) => {
+      const healthInfo = await getProductHealthScore(product._id, product.name);
+      
+      return {
+        id: product._id,
+        name: product.name,
+        brand: product.brand,
+        category: product.productType,
+        image: product.imageUrl,
+        healthScore: healthInfo.healthScore,
+        healthLevel: healthInfo.healthLevel
+      };
+    }));
+    
+    // 按健康评分排序（从高到低）
+    productsWithScores.sort((a, b) => b.healthScore - a.healthScore);
+    
+    // 限制返回数量
+    const limitedProducts = productsWithScores.slice(0, parseInt(limit));
+    
+    logger.info(`返回 ${limitedProducts.length} 个同类推荐产品`);
+    res.status(200).json({
+      success: true,
+      data: {
+        products: limitedProducts,
+        targetType: simplifiedTargetType,
+        total: limitedProducts.length
+      }
+    });
+    
+  } catch (error) {
+    logger.error(`获取同类推荐产品失败: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      message: '获取同类推荐产品失败',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+}
+
+/**
+ * 获取产品详细信息
+ * @param {Object} req - Express请求对象
+ * @param {Object} res - Express响应对象
+ * @returns {Promise<void>}
+ */
+async function getProductDetail(req, res) {
+  try {
+    const { id } = req.params;
+    
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: '缺少产品ID参数'
+      });
+    }
+    
+    logger.info(`获取产品详情: ID=${id}`);
+    
+    const { usingMemoryDB, inMemoryDB } = getDBStatus();
+    let product = null;
+    let ingredient = null;
+    
+    if (usingMemoryDB) {
+      // 从内存数据库获取产品和配料信息
+      product = inMemoryDB.products.find(p => p._id.toString() === id);
+      if (product) {
+        ingredient = inMemoryDB.ingredients.find(ing => 
+          ing.productId === id || ing.productId === product._id
+        );
+      }
+    } else {
+      // 从MongoDB获取产品和配料信息
+      const ProductModel = mongoose.model('Product');
+      const IngredientModel = mongoose.model('Ingredient');
+      
+      product = await ProductModel.findById(id).lean();
+      if (product) {
+        ingredient = await IngredientModel.findOne({
+          productId: new mongoose.Types.ObjectId(id)
+        }).sort({ scoreAnalyzedAt: -1 }).lean(); // 获取最新的配料分析
+      }
+    }
+    
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: '产品不存在'
+      });
+    }
+    
+    // 应用产品类型简化规则
+    const simplifiedProduct = simplifyProductTypes([product])[0];
+    
+    // 获取健康评分信息
+    const healthInfo = await getProductHealthScore(product._id, product.name);
+    
+    // 构建详细信息响应
+    const productDetail = {
+      id: product._id,
+      name: product.name,
+      brand: product.brand,
+      category: simplifiedProduct.productType,
+      originalCategory: simplifiedProduct.originalProductType,
+      image: product.imageUrl,
+      createdAt: product.createdAt,
+      updatedAt: product.updatedAt,
+      healthScore: healthInfo.healthScore,
+      healthLevel: healthInfo.healthLevel,
+      healthAnalysis: healthInfo.healthAnalysis
+    };
+    
+    // 如果有配料信息，添加到响应中
+    if (ingredient) {
+      productDetail.ingredients = {
+        id: ingredient._id,
+        ingredientsList: ingredient.ingredientsList,
+        ingredients: ingredient.ingredients || [],
+        mainIssues: ingredient.mainIssues || [],
+        goodPoints: ingredient.goodPoints || [],
+        createdAt: ingredient.createdAt,
+        updatedAt: ingredient.updatedAt,
+        scoreAnalyzedAt: ingredient.scoreAnalyzedAt
+      };
+    }
+    
+    logger.info(`返回产品 "${product.name}" 的详细信息`);
+    res.status(200).json({
+      success: true,
+      data: {
+        product: productDetail
+      }
+    });
+    
+  } catch (error) {
+    logger.error(`获取产品详情失败: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      message: '获取产品详情失败',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+}
+
+export { getProductCategories, getRecommendedProducts, getSimilarProducts, getProductDetail }; 

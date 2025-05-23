@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -63,14 +64,14 @@ const RecommendationsPage = () => {
   if (error && !loading && products.length === 0) {
     return (
       <div className="space-y-6">
-        <h1 className="page-title" id="src/pages/RecommendationsPage.tsx:51:10">健康产品推荐</h1>
-        <div className="flex flex-col items-center justify-center p-8 text-center" id="src/pages/RecommendationsPage.tsx:52:12">
+        <h1 className="page-title" id="src/pages/RecommendationsPage.tsx:58:10">健康产品推荐</h1>
+        <div className="flex flex-col items-center justify-center p-8 text-center" id="src/pages/RecommendationsPage.tsx:59:12">
           <AlertCircle className="h-12 w-12 text-red-500 mb-4" />
           <p className="text-gray-600 mb-4">{error}</p>
           <Button 
             onClick={() => window.location.reload()} 
             className="bg-app-green hover:bg-app-green-dark"
-            id="src/pages/RecommendationsPage.tsx:56:13"
+            id="src/pages/RecommendationsPage.tsx:63:13"
           >
             重新加载
           </Button>
@@ -81,15 +82,15 @@ const RecommendationsPage = () => {
 
   return (
     <div className="space-y-6">
-      <h1 className="page-title" id="src/pages/RecommendationsPage.tsx:67:8">健康产品推荐</h1>
+      <h1 className="page-title" id="src/pages/RecommendationsPage.tsx:74:8">健康产品推荐</h1>
       
-      <div className="flex gap-3 mb-4" id="src/pages/RecommendationsPage.tsx:69:7">
-        <div className="flex-1" id="src/pages/RecommendationsPage.tsx:70:9">
+      <div className="flex gap-3 mb-4" id="src/pages/RecommendationsPage.tsx:76:7">
+        <div className="flex-1" id="src/pages/RecommendationsPage.tsx:77:9">
           <Select
             value={selectedCategory}
             onValueChange={setSelectedCategory}
           >
-            <SelectTrigger className="bg-white" id="src/pages/RecommendationsPage.tsx:75:13">
+            <SelectTrigger className="bg-white" id="src/pages/RecommendationsPage.tsx:82:13">
               <SelectValue placeholder="选择类别" />
             </SelectTrigger>
             <SelectContent>
@@ -102,12 +103,12 @@ const RecommendationsPage = () => {
           </Select>
         </div>
         
-        <div className="flex-1" id="src/pages/RecommendationsPage.tsx:87:9">
+        <div className="flex-1" id="src/pages/RecommendationsPage.tsx:94:9">
           <Select
             value={sortBy}
             onValueChange={setSortBy}
           >
-            <SelectTrigger className="bg-white" id="src/pages/RecommendationsPage.tsx:92:13">
+            <SelectTrigger className="bg-white" id="src/pages/RecommendationsPage.tsx:99:13">
               <SelectValue placeholder="排序方式" />
             </SelectTrigger>
             <SelectContent>
@@ -119,7 +120,7 @@ const RecommendationsPage = () => {
       
       {/* 加载状态 */}
       {loading && (
-        <div className="flex items-center justify-center py-8" id="src/pages/RecommendationsPage.tsx:103:9">
+        <div className="flex items-center justify-center py-8" id="src/pages/RecommendationsPage.tsx:110:9">
           <Loader2 className="h-6 w-6 animate-spin mr-2" />
           <span className="text-gray-600">正在加载产品数据...</span>
         </div>
@@ -127,13 +128,13 @@ const RecommendationsPage = () => {
       
       {/* 产品列表 */}
       {!loading && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4" id="src/pages/RecommendationsPage.tsx:111:9">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4" id="src/pages/RecommendationsPage.tsx:118:9">
           {products.length > 0 ? (
             products.map(product => (
               <ProductCard key={product.id} product={product} />
             ))
           ) : (
-            <div className="col-span-full text-center py-8" id="src/pages/RecommendationsPage.tsx:117:13">
+            <div className="col-span-full text-center py-8" id="src/pages/RecommendationsPage.tsx:124:13">
               <p className="text-gray-600">暂无产品数据</p>
             </div>
           )}
@@ -148,9 +149,19 @@ type ProductCardProps = {
 };
 
 const ProductCard = ({ product }: ProductCardProps) => {
+  const navigate = useNavigate();
+
+  const handleCardClick = () => {
+    navigate(`/product/${product.id}`);
+  };
+
   return (
-    <Card className="overflow-hidden" id="src/pages/RecommendationsPage.tsx:133:5">
-      <div className="h-40 bg-gray-100" id="src/pages/RecommendationsPage.tsx:134:7">
+    <Card 
+      className="overflow-hidden cursor-pointer hover:shadow-lg transition-shadow duration-200" 
+      onClick={handleCardClick}
+      id="src/pages/RecommendationsPage.tsx:144:5"
+    >
+      <div className="h-40 bg-gray-100" id="src/pages/RecommendationsPage.tsx:149:7">
         <img 
           src={product.image} 
           alt={product.name}
@@ -158,25 +169,25 @@ const ProductCard = ({ product }: ProductCardProps) => {
           onError={(e) => {
             e.currentTarget.src = "https://via.placeholder.com/300x150?text=产品图片";
           }}
-          id="src/pages/RecommendationsPage.tsx:135:9"
+          id="src/pages/RecommendationsPage.tsx:150:9"
         />
       </div>
-      <div className="p-4" id="src/pages/RecommendationsPage.tsx:144:7">
-        <div className="flex justify-between items-start mb-2" id="src/pages/RecommendationsPage.tsx:145:9">
-          <h3 className="font-medium" id="src/pages/RecommendationsPage.tsx:146:11">{product.name}</h3>
+      <div className="p-4" id="src/pages/RecommendationsPage.tsx:159:7">
+        <div className="flex justify-between items-start mb-2" id="src/pages/RecommendationsPage.tsx:160:9">
+          <h3 className="font-medium" id="src/pages/RecommendationsPage.tsx:161:11">{product.name}</h3>
           <div className={cn(
             "text-xs font-bold px-2 py-1 rounded-full",
             product.healthScore >= 80 ? "bg-green-100 text-green-800" :
             product.healthScore >= 60 ? "bg-yellow-100 text-yellow-800" :
             "bg-red-100 text-red-800"
-          )} id="src/pages/RecommendationsPage.tsx:147:11">
+          )} id="src/pages/RecommendationsPage.tsx:162:11">
             {product.healthScore}分
           </div>
         </div>
-        <p className="text-xs text-gray-400 mb-2" id="src/pages/RecommendationsPage.tsx:154:9">{product.category}</p>
-        <p className="text-sm text-gray-600 mb-3" id="src/pages/RecommendationsPage.tsx:155:9">{product.description}</p>
-        <div className="flex items-center" id="src/pages/RecommendationsPage.tsx:156:9">
-          <div className="flex space-x-1" id="src/pages/RecommendationsPage.tsx:157:11">
+        <p className="text-xs text-gray-400 mb-2" id="src/pages/RecommendationsPage.tsx:169:9">{product.category}</p>
+        <p className="text-sm text-gray-600 mb-3" id="src/pages/RecommendationsPage.tsx:170:9">{product.description}</p>
+        <div className="flex items-center" id="src/pages/RecommendationsPage.tsx:171:9">
+          <div className="flex space-x-1" id="src/pages/RecommendationsPage.tsx:172:11">
             {[...Array(5)].map((_, idx) => (
               <Star
                 key={idx}
@@ -186,7 +197,7 @@ const ProductCard = ({ product }: ProductCardProps) => {
                     ? "text-yellow-400 fill-yellow-400"
                     : "text-gray-300"
                 )}
-                id={`src/pages/RecommendationsPage.tsx:159:15:${idx}`}
+                id={`src/pages/RecommendationsPage.tsx:174:15:${idx}`}
               />
             ))}
           </div>

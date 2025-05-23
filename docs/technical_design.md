@@ -1,7 +1,7 @@
 # 配料健康扫描项目技术设计
 
 ## 项目概述
-配料健康扫描是一个允许用户通过上传食品包装图片来分析食品配料表的应用程序。系统会自动识别图片中的产品信息和配料表，并将这些信息保存到数据库中，以便后续分析食品的健康程度。同时提供基于数据库产品的健康推荐功能。
+配料健康扫描是一个允许用户通过上传食品包装图片或输入图片链接来分析食品配料表的应用程序。系统会自动识别图片中的产品信息和配料表，并将这些信息保存到数据库中，以便后续分析食品的健康程度。同时提供基于数据库产品的健康推荐功能和同类产品推荐。
 
 ## 技术栈
 - **前端**: React, TypeScript, Vite, Tailwind CSS, Shadcn UI
@@ -16,7 +16,7 @@
 - 基于React的单页应用
 - 使用React Router进行路由管理
 - 使用Shadcn UI组件库构建用户界面
-- 使用React Query处理API请求
+- 统一的扫描页面支持图片上传和URL输入两种方式
 
 ### 后端架构
 - 基于Express.js的RESTful API
@@ -24,15 +24,18 @@
 - 使用Mongoose进行数据模型定义和数据库操作
 - 集成ModelScope的VLM模型进行图片分析
 - 推荐系统基于数据库产品数据生成健康评分
+- 产品类型简化服务提供用户友好的分类
 
 ### 数据流
-1. 用户提供食品包装图片URL
-2. 前端发送图片URL到后端API
+1. 用户提供食品包装图片（上传文件或URL）
+2. 前端发送图片到后端API
 3. 后端调用VLM模型分析图片
 4. VLM模型返回识别结果
 5. 后端解析结果并存储到数据库
-6. 返回处理结果给前端
-7. 前端展示产品信息和配料分析
+6. 应用产品类型简化规则
+7. 获取同类健康产品推荐
+8. 返回处理结果给前端
+9. 前端展示产品信息、配料分析和推荐产品
 
 ## 数据模型设计
 
@@ -69,10 +72,52 @@
 }
 ```
 
+## 核心服务设计
+
+### 产品类型简化服务 (productTypeService.js)
+将复杂的技术性产品类型转换为用户友好的日常描述：
+
+#### 主要功能
+- **simplifyProductType(originalType)**: 单个产品类型转换
+- **simplifyProductTypes(products)**: 批量产品类型转换
+- **getSimplifiedProductTypes()**: 获取所有简化类型列表
+
+#### 映射规则示例
+```javascript
+{
+  '烘烤类糕点': '饼干',
+  '热风干燥方便食品': '方便面',
+  '高盐稀态发酵酱油': '酱油',
+  '(Ⅱ类·其他型)速溶豆粉': '豆制品',
+  // ... 70+ 种映射规则
+}
+```
+
+#### 匹配策略
+1. **直接匹配**: 精确匹配映射表中的键值
+2. **模糊匹配**: 包含关键词的部分匹配
+3. **特殊规则**: 基于关键词的智能分类
+4. **备份机制**: 保留原始类型作为 originalProductType
+
+### 健康评分服务 (healthScoreService.js)
+基于产品名称生成一致的健康评分：
+
+#### 评分算法
+- 使用哈希算法确保同一产品始终有相同评分
+- 评分范围：60-95分
+- 分级标准：
+  - 90-95分：优质健康产品
+  - 80-89分：健康水平良好
+  - 70-79分：营养成分一般
+  - 60-69分：建议谨慎选择
+
 ## API设计
 
 ### 图片分析API
 - **端点**: POST /api/analyze-image
+- **支持格式**: 
+  - FormData (文件上传)
+  - JSON (URL输入)
 - **请求体**:
   ```json
   {
@@ -112,14 +157,14 @@
 
 ### 推荐系统API
 
-#### 获取产品类型
+#### 获取产品类型（简化后）
 - **端点**: GET /recommendations/categories
 - **响应**:
   ```json
   {
     "success": true,
     "data": {
-      "categories": ["全部", "烘烤类糕点", "热风干燥方便食品", "糕点/饼干"]
+      "categories": ["全部", "饼干", "方便面", "膨化食品", "饮料"]
     }
   }
   ```
@@ -140,7 +185,8 @@
           "id": "60d21b4667d0d8992e610c85",
           "name": "法式浪漫礼",
           "brand": "解析失败-未知品牌",
-          "category": "糕点/饼干",
+          "category": "饼干",
+          "originalCategory": "糕点/饼干",
           "image": "https://example.com/image.jpg",
           "healthScore": 81,
           "description": "法式浪漫礼整体健康水平良好，适合日常消费，推荐适量食用。"
@@ -153,12 +199,82 @@
   }
   ```
 
+#### 获取同类推荐产品
+- **端点**: GET /recommendations/similar
+- **查询参数**:
+  - `productType` (必需): 产品类型
+  - `excludeId` (可选): 要排除的产品ID
+  - `limit` (可选): 返回数量限制，默认5
+- **响应**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "products": [
+        {
+          "id": "60d21b4667d0d8992e610c86",
+          "name": "健康薯片",
+          "brand": "健康品牌",
+          "category": "膨化食品",
+          "image": "https://example.com/image2.jpg",
+          "healthScore": 88,
+          "healthLevel": "良好"
+        }
+      ],
+      "targetType": "膨化食品",
+      "total": 1
+    }
+  }
+  ```
+
+#### 获取产品详细信息
+- **端点**: GET /recommendations/product/:id
+- **路径参数**:
+  - `id` (必需): 产品ID
+- **响应**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "product": {
+        "id": "682fe18e970de85640aa6f13",
+        "name": "原味豆浆粉",
+        "brand": "未知品牌",
+        "category": "豆制品",
+        "originalCategory": "(Ⅱ类·其他型)速溶豆粉",
+        "image": "https://qcloud.dpfile.com/pc/xxx.jpg",
+        "createdAt": "2025-05-23T02:46:38.765Z",
+        "updatedAt": "2025-05-23T02:46:38.765Z",
+        "healthScore": 85,
+        "healthLevel": "良好",
+        "healthAnalysis": "配料表仅含非转基因大豆，无添加剂",
+        "ingredients": {
+          "id": "682fe18e970de85640aa6f15",
+          "ingredientsList": "<添加量:大豆(非转基因)>≥36g/100g",
+          "ingredients": [
+            {
+              "name": "<添加量:大豆(非转基因)>≥36g/100g",
+              "isHarmful": false,
+              "harmfulLevel": 0
+            }
+          ],
+          "mainIssues": ["大豆含量未达原料占比最高（36%）"],
+          "goodPoints": ["零添加防腐剂/香精/色素", "使用非转基因大豆原料"],
+          "createdAt": "2025-05-23T02:46:38.771Z",
+          "updatedAt": "2025-05-23T02:46:55.367Z",
+          "scoreAnalyzedAt": "2025-05-23T02:46:55.366Z"
+        }
+      }
+    }
+  }
+  ```
+
 ## 推荐系统设计
 
 ### 健康评分算法
 - 基于产品名称生成一致的健康评分（60-95分）
 - 使用哈希算法确保同一产品始终有相同评分
-- 评分范围：60-95分，分为三个等级：
+- 评分范围：60-95分，分为四个等级：
   - 90-95分：优质健康产品
   - 80-89分：健康水平良好
   - 70-79分：营养成分一般
@@ -171,46 +287,140 @@
 - 70-79分：建议适量食用，注意均衡饮食
 - 60-69分：建议谨慎选择，寻找更健康替代品
 
+### 同类推荐算法
+- 基于简化后的产品类型进行匹配
+- 排除当前分析的产品
+- 按健康评分从高到低排序
+- 支持限制返回数量
+
 ### 筛选和排序功能
-- 支持按产品类型筛选
+- 支持按简化后的产品类型筛选
 - 支持按健康评分排序（从高到低）
 - 支持限制返回数量
 
+## 前端页面架构
+
+### ScanPage (统一扫描页面)
+- **输入模式切换**: 支持图片上传和URL输入
+- **图片上传**: 支持拖拽和点击上传
+- **URL输入**: 支持图片链接输入和预览
+- **分析结果展示**: 
+  - 产品信息卡片
+  - 健康评分圆形指示器
+  - 健康分析详情（亮点和注意事项）
+  - 配料表完整信息
+  - 配料成分风险标签
+- **同类推荐**: 推荐产品网格展示
+- **错误处理**: 完善的错误提示和重试机制
+
+### RecommendationsPage
+- 产品类型筛选（使用简化后的类型）
+- 健康评分排序
+- 产品网格展示
+- **产品卡片点击**: 支持点击跳转到产品详情页
+- **交互反馈**: 鼠标悬停阴影效果和光标变化
+- 分页功能
+
+### HomePage
+- 功能介绍
+- 快速入口
+
+### ProductDetailPage
+- **产品详细信息展示**: 完整的产品信息、图片、品牌、类型等
+- **健康评分详情**: 彩色圆形评分指示器、健康等级标签、健康分析文字
+- **配料表分析**: 
+  - 完整配料表展示
+  - 配料成分分析标签（风险等级标识）
+  - 健康亮点列表（绿色展示）
+  - 注意事项列表（橙色警告）
+- **产品信息详情**: 添加时间、原始分类信息
+- **导航功能**: 返回按钮（支持浏览器历史回退）
+- **错误处理**: 产品不存在、加载失败的友好提示
+- **响应式设计**: 支持桌面端和移动端适配
+- **路由集成**: 通过 `/product/:id` 路径访问
+- **数据获取**: 调用产品详情API获取完整信息
+
 ## VLM模型集成
-系统将使用ModelScope的Qwen2.5-VL-7B-Instruct模型进行图片分析。该模型将接收图片URL和提示文本，返回图片中识别到的产品信息和配料表。
+系统使用ModelScope的Qwen2.5-VL-7B-Instruct模型进行图片分析。该模型将接收图片URL和提示文本，返回图片中识别到的产品信息和配料表。
 
 ### 模型调用流程
 1. 构建请求消息，包含文本提示和图片URL
 2. 调用ModelScope API
 3. 解析模型返回的结果
 4. 提取产品信息和配料表
-5. 将信息保存到数据库
+5. 应用产品类型简化规则
+6. 将信息保存到数据库
+7. 获取同类推荐产品
 
 ## 错误处理与日志记录
 - 使用winston进行日志记录
 - 所有API错误将返回标准错误响应
 - 日志将保存在logs/app.log文件中
+- 前端提供用户友好的错误提示
 
 ## 测试策略
 - 使用Jest进行单元测试
 - 使用Supertest进行API集成测试
 - 模拟VLM模型响应进行测试
 - 推荐API的单元测试和集成测试
+- 产品类型简化服务的单元测试
 
 ## 文件结构
+```
+project/
+├── src/                          # 前端源码
+│   ├── pages/
+│   │   ├── ScanPage.tsx         # 统一扫描页面
+│   │   ├── RecommendationsPage.tsx  # 推荐产品页面
+│   │   ├── ProductDetailPage.tsx    # 产品详情页面
+│   │   └── HomePage.tsx
+│   ├── services/
+│   │   └── recommendationService.ts # 推荐API服务（含产品详情）
+│   ├── components/              # 共用组件
+│   └── lib/                     # 工具函数
+├── server/                      # 后端源码
+│   ├── src/
+│   │   ├── controllers/
+│   │   │   ├── imageController.js
+│   │   │   └── recommendationController.js  # 含产品详情控制器
+│   │   ├── services/
+│   │   │   ├── vlmService.js
+│   │   │   ├── healthScoreService.js
+│   │   │   └── productTypeService.js    # 产品类型简化服务
+│   │   ├── models/
+│   │   │   ├── Product.js
+│   │   │   └── Ingredient.js
+│   │   ├── routes/
+│   │   │   ├── imageRoutes.js
+│   │   │   └── recommendationRoutes.js   # 含产品详情路由
+│   │   └── config/
+│   └── tests/                   # 测试文件
+├── docs/                        # 文档
+│   └── technical_design.md
+└── logs/                        # 日志文件
+    └── app.log
+```
 
-### 后端文件
-- `src/controllers/recommendationController.js` - 推荐功能控制器
-- `src/routes/recommendationRoutes.js` - 推荐功能路由
-- `src/controllers/imageAnalysisController.js` - 图片分析控制器
-- `src/models/Product.js` - 产品数据模型
-- `src/models/Ingredient.js` - 配料数据模型
+## 部署架构
+- 前端：Vite构建，支持静态部署
+- 后端：Node.js Express服务
+- 数据库：MongoDB
+- 日志：文件系统日志
+- API：RESTful接口设计
 
-### 前端文件
-- `src/pages/RecommendationsPage.tsx` - 推荐页面组件
-- `src/services/recommendationService.ts` - 推荐API服务
-- `src/pages/ScanPage.tsx` - 扫描页面组件
-- `src/pages/HomePage.tsx` - 首页组件
+## 性能优化
+- 图片上传支持多种格式
+- API响应缓存
+- 数据库查询优化
+- 前端组件懒加载
+- 错误边界处理
+
+## 安全考虑
+- 图片上传文件类型验证
+- URL输入格式验证
+- API请求频率限制
+- 错误信息脱敏
+- 数据库查询防注入
 
 ## 健康评分系统设计
 
@@ -325,37 +535,3 @@ const healthScore = ingredient.healthScore || generateHealthScore(product.name);
 
 #### 新增文件
 - `src/services/healthScoreService.js` - 健康评分分析服务
-- `scripts/updateHealthScores.js` - 存量数据更新脚本
-
-#### 修改文件
-- `src/models/Ingredient.js` - 添加健康评分字段
-- `src/controllers/imageAnalysisController.js` - 集成健康评分功能
-- `src/controllers/recommendationController.js` - 使用真实健康评分数据
-
-### 错误处理和容错机制
-
-#### API调用容错
-- **超时设置**：30秒请求超时
-- **重试机制**：API失败时使用备用算法
-- **频率控制**：批量处理时添加延迟
-- **详细日志**：记录所有处理过程和错误信息
-
-#### 备用评分算法
-当AI模型API不可用时，系统使用基于关键词的简化算法：
-- 检测有害添加剂关键词（防腐剂、色素、香精等）
-- 检测天然成分关键词（纯、天然、有机等）
-- 基于关键词匹配计算基础评分
-
-### 性能和扩展性
-
-#### 性能优化
-- **批量处理**：避免单个请求造成的数据库压力
-- **异步处理**：健康评分分析不阻塞主流程
-- **缓存机制**：相同配料表避免重复分析
-- **索引优化**：healthScore字段建立索引
-
-#### 扩展性考虑
-- **模型切换**：支持更换不同的AI分析模型
-- **评分算法**：支持多种评分算法并行
-- **数据源**：支持从多个数据源获取营养信息
-- **实时更新**：支持评分标准的动态调整 

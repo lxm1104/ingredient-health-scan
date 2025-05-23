@@ -33,7 +33,7 @@ app.use((req, res, next) => {
 
 // 路由
 app.use('/api', imageRoutes);
-app.use('/recommendations', recommendationRoutes);
+app.use('/api/recommendations', recommendationRoutes);
 
 // 根路由
 app.get('/', (req, res) => {

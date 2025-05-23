@@ -1,6 +1,7 @@
 // 推荐API服务
 
-const API_BASE_URL = 'http://localhost:3001';
+// 使用相对路径，通过Vite代理访问后端API
+const API_BASE_URL = '';
 
 /**
  * 产品类型接口
@@ -26,6 +27,47 @@ interface Product {
 }
 
 /**
+ * 产品详情接口
+ */
+interface ProductDetail {
+  id: string;
+  name: string;
+  brand: string;
+  category: string;
+  originalCategory?: string;
+  image: string;
+  createdAt: string;
+  updatedAt: string;
+  healthScore: number;
+  healthLevel: string;
+  healthAnalysis?: string;
+  ingredients?: {
+    id: string;
+    ingredientsList: string;
+    ingredients: Array<{
+      name: string;
+      isHarmful: boolean;
+      harmfulLevel: number;
+    }>;
+    mainIssues: string[];
+    goodPoints: string[];
+    createdAt: string;
+    updatedAt: string;
+    scoreAnalyzedAt: string;
+  };
+}
+
+/**
+ * 产品详情响应接口
+ */
+interface ProductDetailResponse {
+  success: boolean;
+  data: {
+    product: ProductDetail;
+  };
+}
+
+/**
  * 产品列表响应接口
  */
 interface ProductsResponse {
@@ -44,7 +86,7 @@ interface ProductsResponse {
  */
 export async function getProductCategories(): Promise<string[]> {
   try {
-    const response = await fetch(`${API_BASE_URL}/recommendations/categories`);
+    const response = await fetch(`${API_BASE_URL}/api/recommendations/categories`);
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
@@ -90,7 +132,7 @@ export async function getRecommendedProducts(params: {
       queryParams.append('limit', params.limit.toString());
     }
     
-    const url = `${API_BASE_URL}/recommendations/products${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
+    const url = `${API_BASE_URL}/api/recommendations/products${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
     
     const response = await fetch(url);
     
@@ -112,4 +154,30 @@ export async function getRecommendedProducts(params: {
   }
 }
 
-export type { Product }; 
+/**
+ * 获取产品详细信息
+ * @param {string} productId - 产品ID
+ * @returns {Promise<ProductDetail | null>} 产品详情或null
+ */
+export async function getProductDetail(productId: string): Promise<ProductDetail | null> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/recommendations/product/${productId}`);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data: ProductDetailResponse = await response.json();
+    
+    if (!data.success) {
+      throw new Error('API返回失败状态');
+    }
+    
+    return data.data.product;
+  } catch (error) {
+    console.error('获取产品详情失败:', error);
+    return null;
+  }
+}
+
+export type { Product, ProductDetail }; 
