@@ -1,14 +1,13 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
-import { Camera, Apple, Home } from "lucide-react";
+import { Camera, Apple } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NavigationBar = () => {
   return (
     <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg">
       <div className="max-w-md mx-auto flex items-center justify-around">
-        <NavItem to="/" icon={<Home className="h-6 w-6" />} label="首页" />
-        <NavItem to="/scan" icon={<Camera className="h-6 w-6" />} label="扫一扫" />
+        <NavItem to="/scan" icon={<Camera className="h-6 w-6" />} label="查配料" />
         <NavItem to="/recommendations" icon={<Apple className="h-6 w-6" />} label="推荐" />
       </div>
     </nav>

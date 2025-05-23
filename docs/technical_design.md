@@ -17,6 +17,17 @@
 - 使用React Router进行路由管理
 - 使用Shadcn UI组件库构建用户界面
 - 统一的扫描页面支持图片上传和URL输入两种方式
+- **路由配置更新**: 默认路由(`/`)重定向到扫描页面(`/scan`)，移除首页
+- **导航简化**: 底部导航仅保留"查配料"和"推荐"两个标签
+
+### 路由结构
+```
+/ → 重定向到 /scan
+/scan → 扫描页面（默认页面）
+/recommendations → 推荐页面
+/product/:id → 产品详情页
+/ingredients → 重定向到 /scan（保持兼容性）
+```
 
 ### 后端架构
 - 基于Express.js的RESTful API
