@@ -3,6 +3,7 @@ import Product from '../models/Product.js';
 import Ingredient from '../models/Ingredient.js';
 import { logger } from '../config/database.js';
 import healthScoreService from '../services/healthScoreService.js';
+import { checkProductDuplication, mergeProductInformation } from '../services/productDeduplicationService.js';
 
 /**
  * 处理图片分析请求
@@ -72,15 +73,13 @@ async function analyzeImageController(req, res) {
     logger.info(`完整解析后的数据: ${JSON.stringify(parsedData)}`);
     logger.info(`解析后的数据概要: brand=${parsedData.brand}, name=${parsedData.name}, ingredients数量=${parsedData.ingredients ? parsedData.ingredients.length : 0}`);
     
-    // 保存产品信息到数据库
-    const product = Product({
+    // 准备产品信息和配料信息
+    const newProduct = {
       brand: parsedData.brand || '未知品牌',
       name: parsedData.name || '未知产品',
       productType: parsedData.productType || '未知类型',
       imageUrl
-    });
-    await product.save();
-    logger.info(`产品信息已保存: ${product._id}`);
+    };
     
     // 处理配料信息
     const ingredientItems = Array.isArray(parsedData.ingredients) 
@@ -107,42 +106,142 @@ async function analyzeImageController(req, res) {
         })
       : [{ name: '无法解析配料', isHarmful: false, harmfulLevel: 0 }];
     
-    // 保存配料信息到数据库
-    const ingredient = Ingredient({
-      productId: product._id,
+    const newIngredients = {
       ingredientsList: parsedData.ingredientsList,
       ingredients: ingredientItems
-    });
-    await ingredient.save();
-    logger.info(`配料信息已保存: ${ingredient._id}`);
+    };
     
-    // 进行健康评分分析
+    // 🎯 核心新功能：产品去重检查
+    logger.info(`开始进行产品去重检查: ${newProduct.name}`);
+    const duplicationCheck = await checkProductDuplication(newProduct, newIngredients);
+    logger.info(`去重检查结果: ${duplicationCheck.recommendation} - ${duplicationCheck.message}`);
+    
+    let finalProduct = null;
+    let finalIngredients = null;
+    let duplicateHandled = false;
+    
+    // 根据去重检查结果处理
+    if (duplicationCheck.isDuplicate) {
+      const bestMatch = duplicationCheck.bestMatch;
+      const confidence = bestMatch.similarity.confidence;
+      
+      if (duplicationCheck.recommendation === 'skip') {
+        // 高度相似，跳过保存，返回现有产品
+        logger.info(`检测到高度重复产品，跳过保存并返回现有产品: ${bestMatch.product.name}`);
+        finalProduct = bestMatch.product;
+        finalIngredients = bestMatch.ingredients;
+        duplicateHandled = true;
+        
+      } else if (duplicationCheck.recommendation === 'merge') {
+        // 中度相似，尝试合并信息
+        logger.info(`检测到中度重复产品，尝试合并信息: ${bestMatch.product.name}`);
+        
+        const merged = mergeProductInformation(
+          bestMatch.product, 
+          newProduct, 
+          bestMatch.ingredients, 
+          newIngredients
+        );
+        
+        if (merged.changes.length > 0) {
+          // 有信息需要更新，执行合并
+          logger.info(`合并产品信息，更新项目: ${merged.changes.join(', ')}`);
+          
+          // 保存更新后的产品信息
+          const productToUpdate = await Product.findById(bestMatch.product._id);
+          if (productToUpdate) {
+            Object.assign(productToUpdate, merged.product);
+            await productToUpdate.save();
+            finalProduct = productToUpdate;
+            logger.info(`产品信息已更新: ${productToUpdate._id}`);
+          }
+          
+          // 保存更新后的配料信息
+          if (merged.ingredients && bestMatch.ingredients) {
+            const ingredientToUpdate = await Ingredient.findById(bestMatch.ingredients._id);
+            if (ingredientToUpdate) {
+              Object.assign(ingredientToUpdate, merged.ingredients);
+              await ingredientToUpdate.save();
+              finalIngredients = ingredientToUpdate;
+              logger.info(`配料信息已更新: ${ingredientToUpdate._id}`);
+            }
+          }
+          
+        } else {
+          // 没有新信息，直接使用现有产品
+          finalProduct = bestMatch.product;
+          finalIngredients = bestMatch.ingredients;
+        }
+        
+        duplicateHandled = true;
+      }
+      // 如果 recommendation 是 'proceed'，则继续正常流程保存新产品
+    }
+    
+    // 如果没有处理重复产品，或者建议继续添加，则保存新产品
+    if (!duplicateHandled) {
+      logger.info(`保存新产品: ${newProduct.name}`);
+      
+      // 保存产品信息到数据库
+      const product = Product(newProduct);
+      await product.save();
+      logger.info(`产品信息已保存: ${product._id}`);
+      finalProduct = product;
+      
+      // 保存配料信息到数据库
+      const ingredient = Ingredient({
+        productId: product._id,
+        ...newIngredients
+      });
+      await ingredient.save();
+      logger.info(`配料信息已保存: ${ingredient._id}`);
+      finalIngredients = ingredient;
+    }
+    
+    // 进行健康评分分析（如果配料信息还没有健康评分）
     let healthScoreData = null;
     try {
-      logger.info(`开始对产品进行健康评分: ${product.name}`);
-      healthScoreData = await healthScoreService.analyzeHealthScore(
-        parsedData.ingredientsList,
-        product.name,
-        product.productType
-      );
-      logger.info(`健康评分完成: ${product.name} - 评分: ${healthScoreData.healthScore}`);
+      // 检查是否已有健康评分
+      const needHealthScore = !finalIngredients.healthScore || 
+                              !finalIngredients.scoreAnalyzedAt ||
+                              (duplicateHandled && duplicationCheck.recommendation === 'merge');
       
-      // 更新配料信息中的健康评分
-      if (ingredient.updateHealthScore) {
-        // 内存模式
-        ingredient.updateHealthScore(healthScoreData);
+      if (needHealthScore) {
+        logger.info(`开始对产品进行健康评分: ${finalProduct.name}`);
+        healthScoreData = await healthScoreService.analyzeHealthScore(
+          finalIngredients.ingredientsList,
+          finalProduct.name,
+          finalProduct.productType
+        );
+        logger.info(`健康评分完成: ${finalProduct.name} - 评分: ${healthScoreData.healthScore}`);
+        
+        // 更新配料信息中的健康评分
+        if (finalIngredients.updateHealthScore) {
+          // 内存模式
+          finalIngredients.updateHealthScore(healthScoreData);
+        } else {
+          // MongoDB模式
+          finalIngredients.healthScore = healthScoreData.healthScore;
+          finalIngredients.healthLevel = healthScoreData.healthLevel;
+          finalIngredients.healthAnalysis = healthScoreData.analysis;
+          finalIngredients.mainIssues = healthScoreData.mainIssues || [];
+          finalIngredients.goodPoints = healthScoreData.goodPoints || [];
+          finalIngredients.scoreAnalyzedAt = new Date();
+          await finalIngredients.save();
+        }
+        
+        logger.info(`健康评分信息已更新到数据库`);
       } else {
-        // MongoDB模式
-        ingredient.healthScore = healthScoreData.healthScore;
-        ingredient.healthLevel = healthScoreData.healthLevel;
-        ingredient.healthAnalysis = healthScoreData.analysis;
-        ingredient.mainIssues = healthScoreData.mainIssues || [];
-        ingredient.goodPoints = healthScoreData.goodPoints || [];
-        ingredient.scoreAnalyzedAt = new Date();
-        await ingredient.save();
+        // 使用现有的健康评分
+        healthScoreData = {
+          healthScore: finalIngredients.healthScore,
+          healthLevel: finalIngredients.healthLevel,
+          analysis: finalIngredients.healthAnalysis,
+          mainIssues: finalIngredients.mainIssues || [],
+          goodPoints: finalIngredients.goodPoints || []
+        };
+        logger.info(`使用现有健康评分: ${finalProduct.name} - 评分: ${healthScoreData.healthScore}`);
       }
-      
-      logger.info(`健康评分信息已更新到数据库`);
     } catch (healthError) {
       logger.error(`健康评分分析失败: ${healthError.message}`);
       // 健康评分失败不影响主流程，继续返回其他信息
@@ -151,18 +250,35 @@ async function analyzeImageController(req, res) {
     // 构建返回数据
     const responseData = {
       product: {
-        id: product._id,
-        brand: product.brand,
-        name: product.name,
-        productType: product.productType,
-        imageUrl: product.imageUrl
+        id: finalProduct._id,
+        brand: finalProduct.brand,
+        name: finalProduct.name,
+        productType: finalProduct.productType,
+        imageUrl: finalProduct.imageUrl
       },
       ingredients: {
-        id: ingredient._id,
-        ingredientsList: ingredient.ingredientsList,
-        ingredients: ingredient.ingredients
+        id: finalIngredients._id,
+        ingredientsList: finalIngredients.ingredientsList,
+        ingredients: finalIngredients.ingredients
       }
     };
+    
+    // 添加去重处理信息
+    if (duplicationCheck.isDuplicate) {
+      responseData.deduplication = {
+        isDuplicate: true,
+        action: duplicationCheck.recommendation,
+        message: duplicationCheck.message,
+        similarity: duplicationCheck.bestMatch.similarity.overallSimilarity,
+        confidence: duplicationCheck.bestMatch.similarity.confidence
+      };
+    } else {
+      responseData.deduplication = {
+        isDuplicate: false,
+        action: 'new_product',
+        message: '未发现重复产品，已添加新产品'
+      };
+    }
     
     // 如果健康评分成功，添加健康评分信息
     if (healthScoreData) {
@@ -171,7 +287,7 @@ async function analyzeImageController(req, res) {
       responseData.ingredients.healthAnalysis = healthScoreData.analysis;
       responseData.ingredients.mainIssues = healthScoreData.mainIssues;
       responseData.ingredients.goodPoints = healthScoreData.goodPoints;
-      responseData.ingredients.scoreAnalyzedAt = ingredient.scoreAnalyzedAt;
+      responseData.ingredients.scoreAnalyzedAt = finalIngredients.scoreAnalyzedAt;
     }
     
     // 返回处理结果

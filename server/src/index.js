@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import imageRoutes from './routes/imageRoutes.js';
 import recommendationRoutes from './routes/recommendationRoutes.js';
+import deduplicationRoutes from './routes/deduplicationRoutes.js';
 import { connectDB, logger } from './config/database.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -34,6 +35,7 @@ app.use((req, res, next) => {
 // 路由
 app.use('/api', imageRoutes);
 app.use('/api/recommendations', recommendationRoutes);
+app.use('/api/deduplication', deduplicationRoutes);
 
 // 根路由
 app.get('/', (req, res) => {
