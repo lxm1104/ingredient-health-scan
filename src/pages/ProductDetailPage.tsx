@@ -4,10 +4,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, Calendar, Info, AlertCircle, CheckCircle } from "lucide-react";
+import { ArrowLeft, Calendar, Info, AlertCircle, CheckCircle, Search } from "lucide-react";
 import { getProductDetail, type ProductDetail } from "@/services/recommendationService";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import ImageViewer from "@/components/ImageViewer";
 
 const ProductDetailPage = () => {
   const { id } = useParams<{ id: string }>();
@@ -15,6 +16,7 @@ const ProductDetailPage = () => {
   const [product, setProduct] = useState<ProductDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showImageViewer, setShowImageViewer] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -71,6 +73,11 @@ const ProductDetailPage = () => {
       case '较差': return 'bg-orange-100 text-orange-800';
       default: return 'bg-gray-100 text-gray-800';
     }
+  };
+
+  // 处理图片点击事件
+  const handleImageClick = () => {
+    setShowImageViewer(true);
   };
 
   if (loading) {
@@ -142,15 +149,28 @@ const ProductDetailPage = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* 产品图片 */}
               <div className="flex justify-center">
-                <img 
-                  src={product.image} 
-                  alt={product.name}
-                  className="w-full max-w-sm h-64 object-contain rounded-lg shadow-md"
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement;
-                    target.src = '/placeholder-image.jpg';
-                  }}
-                />
+                <div 
+                  className="relative group cursor-pointer"
+                  onClick={handleImageClick}
+                  id="src/pages/ProductDetailPage.tsx:135:17"
+                >
+                  <img 
+                    src={product.image} 
+                    alt={product.name}
+                    className="w-full max-w-sm h-64 object-contain rounded-lg shadow-md transition-transform group-hover:scale-105"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.src = '/placeholder-image.jpg';
+                    }}
+                  />
+                  {/* 悬停提示 */}
+                  <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 rounded-lg transition-all duration-200 flex items-center justify-center opacity-0 group-hover:opacity-100">
+                    <div className="bg-white/20 backdrop-blur-sm rounded-lg px-3 py-2 flex items-center gap-2 text-white">
+                      <Search className="h-4 w-4" />
+                      <span className="text-sm font-medium">点击查看大图</span>
+                    </div>
+                  </div>
+                </div>
               </div>
               
               {/* 产品信息 */}
@@ -308,6 +328,14 @@ const ProductDetailPage = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* 图片查看器 */}
+      <ImageViewer
+        src={product.image}
+        alt={product.name}
+        isOpen={showImageViewer}
+        onClose={() => setShowImageViewer(false)}
+      />
     </div>
   );
 };
