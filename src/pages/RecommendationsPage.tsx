@@ -1,5 +1,4 @@
-
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -9,89 +8,88 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card } from "@/components/ui/card";
-import { Star } from "lucide-react";
+import { Star, Loader2, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-// Mock data for product recommendations
-const mockProducts = [
-  {
-    id: 1,
-    name: "有机纯椰子水",
-    category: "饮料",
-    image: "https://images.unsplash.com/photo-1587825045776-5a4520530a4b?w=800&auto=format&fit=crop",
-    healthScore: 95,
-    description: "100%纯天然椰子水，无添加糖分和防腐剂"
-  },
-  {
-    id: 2,
-    name: "全麦杂粮饼干",
-    category: "零食",
-    image: "https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=800&auto=format&fit=crop",
-    healthScore: 85,
-    description: "采用全麦粉和多种杂粮制作，低糖低脂"
-  },
-  {
-    id: 3,
-    name: "天然蜂蜜",
-    category: "调味品",
-    image: "https://images.unsplash.com/photo-1587049352851-8d4e89133924?w=800&auto=format&fit=crop",
-    healthScore: 90,
-    description: "纯天然蜂蜜，无添加糖浆，保留原始营养"
-  },
-  {
-    id: 4,
-    name: "有机豆腐",
-    category: "主食",
-    image: "https://images.unsplash.com/photo-1584321480756-a5f3e0db04ba?w=800&auto=format&fit=crop",
-    healthScore: 92,
-    description: "有机大豆制作，不含防腐剂和添加剂"
-  },
-  {
-    id: 5,
-    name: "草莓蜜饯",
-    category: "零食",
-    image: "https://images.unsplash.com/photo-1464965911861-746a04b4bca6?w=800&auto=format&fit=crop",
-    healthScore: 60,
-    description: "新鲜草莓制作，含少量添加糖"
-  },
-  {
-    id: 6,
-    name: "鲜榨橙汁",
-    category: "饮料",
-    image: "https://images.unsplash.com/photo-1600271886742-f049cd451bba?w=800&auto=format&fit=crop",
-    healthScore: 88,
-    description: "100%鲜榨橙汁，不含添加糖和防腐剂"
-  }
-];
-
-const categories = ["全部", "饮料", "零食", "调味品", "主食"];
+import { getProductCategories, getRecommendedProducts, type Product } from "@/services/recommendationService";
 
 const RecommendationsPage = () => {
   const [selectedCategory, setSelectedCategory] = useState("全部");
   const [sortBy, setSortBy] = useState("healthScore");
+  const [categories, setCategories] = useState<string[]>(["全部"]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const filteredProducts = mockProducts
-    .filter(product => 
-      selectedCategory === "全部" ? true : product.category === selectedCategory
-    )
-    .sort((a, b) => {
-      if (sortBy === "healthScore") {
-        return b.healthScore - a.healthScore;
+  // 获取产品类型
+  useEffect(() => {
+    const loadCategories = async () => {
+      try {
+        const fetchedCategories = await getProductCategories();
+        setCategories(fetchedCategories);
+      } catch (err) {
+        console.error('加载产品类型失败:', err);
+        setError('加载产品类型失败');
       }
-      return 0;
-    });
+    };
+
+    loadCategories();
+  }, []);
+
+  // 获取产品数据
+  useEffect(() => {
+    const loadProducts = async () => {
+      setLoading(true);
+      setError(null);
+      
+      try {
+        const fetchedProducts = await getRecommendedProducts({
+          category: selectedCategory,
+          sortBy,
+          limit: 50
+        });
+        setProducts(fetchedProducts);
+      } catch (err) {
+        console.error('加载产品数据失败:', err);
+        setError('加载产品数据失败，请稍后重试');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadProducts();
+  }, [selectedCategory, sortBy]);
+
+  // 错误状态显示
+  if (error && !loading && products.length === 0) {
+    return (
+      <div className="space-y-6">
+        <h1 className="page-title" id="src/pages/RecommendationsPage.tsx:51:10">健康产品推荐</h1>
+        <div className="flex flex-col items-center justify-center p-8 text-center" id="src/pages/RecommendationsPage.tsx:52:12">
+          <AlertCircle className="h-12 w-12 text-red-500 mb-4" />
+          <p className="text-gray-600 mb-4">{error}</p>
+          <Button 
+            onClick={() => window.location.reload()} 
+            className="bg-app-green hover:bg-app-green-dark"
+            id="src/pages/RecommendationsPage.tsx:56:13"
+          >
+            重新加载
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      <h1 className="page-title">健康产品推荐</h1>
+      <h1 className="page-title" id="src/pages/RecommendationsPage.tsx:67:8">健康产品推荐</h1>
       
-      <div className="flex gap-3 mb-4">
-        <div className="flex-1">
+      <div className="flex gap-3 mb-4" id="src/pages/RecommendationsPage.tsx:69:7">
+        <div className="flex-1" id="src/pages/RecommendationsPage.tsx:70:9">
           <Select
             value={selectedCategory}
             onValueChange={setSelectedCategory}
           >
-            <SelectTrigger className="bg-white">
+            <SelectTrigger className="bg-white" id="src/pages/RecommendationsPage.tsx:75:13">
               <SelectValue placeholder="选择类别" />
             </SelectTrigger>
             <SelectContent>
@@ -104,12 +102,12 @@ const RecommendationsPage = () => {
           </Select>
         </div>
         
-        <div className="flex-1">
+        <div className="flex-1" id="src/pages/RecommendationsPage.tsx:87:9">
           <Select
             value={sortBy}
             onValueChange={setSortBy}
           >
-            <SelectTrigger className="bg-white">
+            <SelectTrigger className="bg-white" id="src/pages/RecommendationsPage.tsx:92:13">
               <SelectValue placeholder="排序方式" />
             </SelectTrigger>
             <SelectContent>
@@ -119,30 +117,40 @@ const RecommendationsPage = () => {
         </div>
       </div>
       
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {filteredProducts.map(product => (
-          <ProductCard key={product.id} product={product} />
-        ))}
-      </div>
+      {/* 加载状态 */}
+      {loading && (
+        <div className="flex items-center justify-center py-8" id="src/pages/RecommendationsPage.tsx:103:9">
+          <Loader2 className="h-6 w-6 animate-spin mr-2" />
+          <span className="text-gray-600">正在加载产品数据...</span>
+        </div>
+      )}
+      
+      {/* 产品列表 */}
+      {!loading && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4" id="src/pages/RecommendationsPage.tsx:111:9">
+          {products.length > 0 ? (
+            products.map(product => (
+              <ProductCard key={product.id} product={product} />
+            ))
+          ) : (
+            <div className="col-span-full text-center py-8" id="src/pages/RecommendationsPage.tsx:117:13">
+              <p className="text-gray-600">暂无产品数据</p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
 
 type ProductCardProps = {
-  product: {
-    id: number;
-    name: string;
-    category: string;
-    image: string;
-    healthScore: number;
-    description: string;
-  };
+  product: Product;
 };
 
 const ProductCard = ({ product }: ProductCardProps) => {
   return (
-    <Card className="overflow-hidden">
-      <div className="h-40 bg-gray-100">
+    <Card className="overflow-hidden" id="src/pages/RecommendationsPage.tsx:133:5">
+      <div className="h-40 bg-gray-100" id="src/pages/RecommendationsPage.tsx:134:7">
         <img 
           src={product.image} 
           alt={product.name}
@@ -150,24 +158,25 @@ const ProductCard = ({ product }: ProductCardProps) => {
           onError={(e) => {
             e.currentTarget.src = "https://via.placeholder.com/300x150?text=产品图片";
           }}
+          id="src/pages/RecommendationsPage.tsx:135:9"
         />
       </div>
-      <div className="p-4">
-        <div className="flex justify-between items-start mb-2">
-          <h3 className="font-medium">{product.name}</h3>
+      <div className="p-4" id="src/pages/RecommendationsPage.tsx:144:7">
+        <div className="flex justify-between items-start mb-2" id="src/pages/RecommendationsPage.tsx:145:9">
+          <h3 className="font-medium" id="src/pages/RecommendationsPage.tsx:146:11">{product.name}</h3>
           <div className={cn(
             "text-xs font-bold px-2 py-1 rounded-full",
             product.healthScore >= 80 ? "bg-green-100 text-green-800" :
             product.healthScore >= 60 ? "bg-yellow-100 text-yellow-800" :
             "bg-red-100 text-red-800"
-          )}>
+          )} id="src/pages/RecommendationsPage.tsx:147:11">
             {product.healthScore}分
           </div>
         </div>
-        <p className="text-xs text-gray-400 mb-2">{product.category}</p>
-        <p className="text-sm text-gray-600 mb-3">{product.description}</p>
-        <div className="flex items-center">
-          <div className="flex space-x-1">
+        <p className="text-xs text-gray-400 mb-2" id="src/pages/RecommendationsPage.tsx:154:9">{product.category}</p>
+        <p className="text-sm text-gray-600 mb-3" id="src/pages/RecommendationsPage.tsx:155:9">{product.description}</p>
+        <div className="flex items-center" id="src/pages/RecommendationsPage.tsx:156:9">
+          <div className="flex space-x-1" id="src/pages/RecommendationsPage.tsx:157:11">
             {[...Array(5)].map((_, idx) => (
               <Star
                 key={idx}
@@ -177,6 +186,7 @@ const ProductCard = ({ product }: ProductCardProps) => {
                     ? "text-yellow-400 fill-yellow-400"
                     : "text-gray-300"
                 )}
+                id={`src/pages/RecommendationsPage.tsx:159:15:${idx}`}
               />
             ))}
           </div>

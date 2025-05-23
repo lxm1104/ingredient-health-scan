@@ -2,6 +2,7 @@ import { analyzeImage, parseVlmOutput } from '../services/vlmService.js';
 import Product from '../models/Product.js';
 import Ingredient from '../models/Ingredient.js';
 import { logger } from '../config/database.js';
+import healthScoreService from '../services/healthScoreService.js';
 
 /**
  * 处理图片分析请求
@@ -36,7 +37,10 @@ async function analyzeImageController(req, res) {
               { name: '酵母', isHarmful: false, harmfulLevel: 0 },
               { name: '盐', isHarmful: false, harmfulLevel: 0 },
               { name: '植物油', isHarmful: false, harmfulLevel: 0 }
-            ]
+            ],
+            healthScore: 88,
+            healthLevel: '良好',
+            healthAnalysis: '测试模式下的健康评分'
           }
         }
       });
@@ -112,23 +116,68 @@ async function analyzeImageController(req, res) {
     await ingredient.save();
     logger.info(`配料信息已保存: ${ingredient._id}`);
     
+    // 进行健康评分分析
+    let healthScoreData = null;
+    try {
+      logger.info(`开始对产品进行健康评分: ${product.name}`);
+      healthScoreData = await healthScoreService.analyzeHealthScore(
+        parsedData.ingredientsList,
+        product.name,
+        product.productType
+      );
+      logger.info(`健康评分完成: ${product.name} - 评分: ${healthScoreData.healthScore}`);
+      
+      // 更新配料信息中的健康评分
+      if (ingredient.updateHealthScore) {
+        // 内存模式
+        ingredient.updateHealthScore(healthScoreData);
+      } else {
+        // MongoDB模式
+        ingredient.healthScore = healthScoreData.healthScore;
+        ingredient.healthLevel = healthScoreData.healthLevel;
+        ingredient.healthAnalysis = healthScoreData.analysis;
+        ingredient.mainIssues = healthScoreData.mainIssues || [];
+        ingredient.goodPoints = healthScoreData.goodPoints || [];
+        ingredient.scoreAnalyzedAt = new Date();
+        await ingredient.save();
+      }
+      
+      logger.info(`健康评分信息已更新到数据库`);
+    } catch (healthError) {
+      logger.error(`健康评分分析失败: ${healthError.message}`);
+      // 健康评分失败不影响主流程，继续返回其他信息
+    }
+    
+    // 构建返回数据
+    const responseData = {
+      product: {
+        id: product._id,
+        brand: product.brand,
+        name: product.name,
+        productType: product.productType,
+        imageUrl: product.imageUrl
+      },
+      ingredients: {
+        id: ingredient._id,
+        ingredientsList: ingredient.ingredientsList,
+        ingredients: ingredient.ingredients
+      }
+    };
+    
+    // 如果健康评分成功，添加健康评分信息
+    if (healthScoreData) {
+      responseData.ingredients.healthScore = healthScoreData.healthScore;
+      responseData.ingredients.healthLevel = healthScoreData.healthLevel;
+      responseData.ingredients.healthAnalysis = healthScoreData.analysis;
+      responseData.ingredients.mainIssues = healthScoreData.mainIssues;
+      responseData.ingredients.goodPoints = healthScoreData.goodPoints;
+      responseData.ingredients.scoreAnalyzedAt = ingredient.scoreAnalyzedAt;
+    }
+    
     // 返回处理结果
     res.status(200).json({
       success: true,
-      data: {
-        product: {
-          id: product._id,
-          brand: product.brand,
-          name: product.name,
-          productType: product.productType,
-          imageUrl: product.imageUrl
-        },
-        ingredients: {
-          id: ingredient._id,
-          ingredientsList: ingredient.ingredientsList,
-          ingredients: ingredient.ingredients
-        }
-      }
+      data: responseData
     });
   } catch (error) {
     logger.error(`图片分析处理失败: ${error.message}`);

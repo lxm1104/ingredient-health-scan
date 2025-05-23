@@ -33,7 +33,33 @@ const ingredientSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
-  ingredients: [ingredientItemSchema]
+  ingredients: [ingredientItemSchema],
+  // 健康评分相关字段
+  healthScore: {
+    type: Number,
+    min: 60,
+    max: 95,
+    default: null // 初始为null，分析后更新
+  },
+  healthLevel: {
+    type: String,
+    enum: ['优秀', '良好', '一般', '较差'],
+    default: null
+  },
+  healthAnalysis: {
+    type: String,
+    default: null // 健康分析说明
+  },
+  mainIssues: [{
+    type: String
+  }], // 主要健康问题列表
+  goodPoints: [{
+    type: String
+  }], // 健康亮点列表
+  scoreAnalyzedAt: {
+    type: Date,
+    default: null // 健康评分分析时间
+  }
 }, {
   timestamps: true // 自动添加 createdAt 和 updatedAt 字段
 });
@@ -48,6 +74,13 @@ class MemoryIngredient {
     this.productId = data.productId;
     this.ingredientsList = data.ingredientsList;
     this.ingredients = data.ingredients;
+    // 健康评分字段
+    this.healthScore = data.healthScore || null;
+    this.healthLevel = data.healthLevel || null;
+    this.healthAnalysis = data.healthAnalysis || null;
+    this.mainIssues = data.mainIssues || [];
+    this.goodPoints = data.goodPoints || [];
+    this.scoreAnalyzedAt = data.scoreAnalyzedAt || null;
     this.createdAt = new Date();
     this.updatedAt = new Date();
   }
@@ -56,6 +89,17 @@ class MemoryIngredient {
     const { inMemoryDB } = getDBStatus();
     inMemoryDB.ingredients.push(this);
     return this;
+  }
+
+  // 更新健康评分信息
+  updateHealthScore(scoreData) {
+    this.healthScore = scoreData.healthScore;
+    this.healthLevel = scoreData.healthLevel;
+    this.healthAnalysis = scoreData.analysis;
+    this.mainIssues = scoreData.mainIssues || [];
+    this.goodPoints = scoreData.goodPoints || [];
+    this.scoreAnalyzedAt = new Date();
+    this.updatedAt = new Date();
   }
 }
 
