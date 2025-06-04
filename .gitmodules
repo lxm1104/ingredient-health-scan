@@ -1,0 +1,3 @@
+[submodule "ingredient-scan-miniprogram"]
+	path = ingredient-scan-miniprogram
+	url = git@github.com:lxm1104/ingredient-health-scan-miniprogram.git
