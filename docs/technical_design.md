@@ -3,6 +3,25 @@
 ## 项目概述
 配料健康扫描是一个允许用户通过上传食品包装图片或输入图片链接来分析食品配料表的应用程序。系统会自动识别图片中的产品信息和配料表，并将这些信息保存到数据库中，以便后续分析食品的健康程度。同时提供基于数据库产品的健康推荐功能和同类产品推荐。
 
+### 项目结构
+本项目采用多端架构设计：
+
+1. **主项目** (当前仓库): Web应用版本
+   - 仓库地址: https://github.com/lxm1104/ingredient-health-scan
+   - 技术栈: React + TypeScript + Vite + Node.js
+
+2. **小程序项目** (Git子模块): 微信小程序版本
+   - 仓库地址: https://github.com/lxm1104/ingredient-health-scan-miniprogram
+   - 子模块路径: `ingredient-scan-miniprogram/`
+   - 技术栈: Taro + React + TypeScript
+
+#### Git 子模块管理
+小程序项目作为主项目的 Git 子模块进行管理，这样的架构设计具有以下优势：
+- **独立开发**: 两个项目可以独立开发、测试和部署
+- **代码复用**: 共享核心业务逻辑和API设计
+- **版本控制**: 主项目可以锁定特定版本的小程序代码
+- **团队协作**: 不同团队可以专注于不同端的开发
+
 ## 技术栈
 - **前端**: React, TypeScript, Vite, Tailwind CSS, Shadcn UI
 - **后端**: Node.js, Express.js
